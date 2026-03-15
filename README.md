@@ -3,7 +3,7 @@
 **Autonomous Red Team agent powered by Claude AI**  
 Uses Nuclei, sqlmap, ffuf, advanced reconnaissance, ethical social engineering templates, etc. 
 
-**Only on authorized scopes.**
+## This project is intended solely for lawful security research and authorized testing in controlled environments. Use only on assets you own or are expressly authorized in writing to assess. Nothing in this repository grants authorization to target third-party systems.
 
 ## Features
 
@@ -27,3 +27,5 @@ Execute `./install.sh` once.
 ```bash
 ./install.sh
 python agent/main.py
+
+
