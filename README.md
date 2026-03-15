@@ -24,7 +24,7 @@ Uses Nuclei, sqlmap, ffuf, advanced reconnaissance, and social engineering templ
 | Anthropic (Claude) | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
 | OpenAI (ChatGPT) | `gpt-5.4` | `OPENAI_API_KEY` |
 | xAI (Grok) | `grok-4-20-beta` | `XAI_API_KEY` |
-| Google (Gemini) | `gemini-3.0-pro` | `GEMINI_API_KEY` |
+| Google (Gemini) | `gemini-3.0-pro` *(google-genai SDK)* | `GEMINI_API_KEY` |
 | Mistral | `mistral-large-latest` | `MISTRAL_API_KEY` |
 | DeepSeek | `deepseek-chat-v3.2` | `DEEPSEEK_API_KEY` |
 | Ollama (local) | `deepseek-r1:3.2` | *(none)* |
@@ -75,14 +75,18 @@ Engagement date : 2026-03-15
 → nuclei and ffuf installed from GitHub Releases
 → Python virtualenv created in .venv/
 ✅ Installation complete !
+  Provider : ANTHROPIC
+  Scope    : https://someth1ng.com
 
-  source .venv/bin/activate
-  export $(cat .env)
-  export PATH=$PATH:$(pwd)/bin:/usr/local/bin
-  python3 agent/main.py
+  Launching Phantom now...
+
+🚀 Phantom - Ethical RedTeam v1.7.0
+  Provider : ANTHROPIC
+  Model    : claude-sonnet-4-6
+  ...
 ```
 
-> **Note :** `chmod +x install.sh` is required once after cloning — the installer uses LF line endings and is safe to run on any Debian/Ubuntu system.
+> **Note :** `chmod +x install.sh` is required once after cloning. Phantom launches automatically at the end — no extra command needed.
 
 ### Windows (PowerShell)
 
