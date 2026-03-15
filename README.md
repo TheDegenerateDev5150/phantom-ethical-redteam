@@ -62,6 +62,7 @@ Choose provider [1-7] : 1
 
 [ STEP 1 / 3 ] API Key
 Enter your ANTHROPIC_API_KEY : sk-ant-...
+  → Testing connection to anthropic API... ✅ OK (HTTP 200)
 ✅ API key saved to .env
 
 [ STEP 2 / 3 ] Authorized Scope
@@ -92,7 +93,7 @@ Engagement date : 2026-03-15
 Same interactive flow (provider → API key → scope → dependencies).
 Windows limitations: `bettercap` and `zphisher` require WSL2.
 
-The installer handles everything: provider selection, API key validation, scope enforcement, Python virtualenv, and external tools (nuclei/ffuf binaries downloaded automatically).
+The installer handles everything: provider selection, API key validation (format + live connection test), scope enforcement, Python virtualenv, and external tools (nuclei/ffuf binaries downloaded automatically).
 
 ---
 
