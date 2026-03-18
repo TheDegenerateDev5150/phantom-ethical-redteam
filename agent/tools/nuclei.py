@@ -1,10 +1,16 @@
 import os
 import subprocess
 import json
+from .scope_checker import scope_guard
+from .logs_helper import log_path
 
 
 def run(target: str, templates: str = "http/cves", severity: str = "critical") -> str:
-    output_path = os.path.join("logs", "nuclei.json")
+    guard = scope_guard(target)
+    if guard:
+        return guard
+
+    output_path = log_path("nuclei.json")
     cmd = [
         "nuclei", "-u", target, "-t", templates,
         "-severity", severity, "-json", "-silent", "-o", output_path,
@@ -49,7 +55,7 @@ def run(target: str, templates: str = "http/cves", severity: str = "critical") -
 
 TOOL_SPEC = {
     "name": "run_nuclei",
-    "description": "Launch a fast Nuclei scan and targeted (CVEs, misconfigs, etc.)",
+    "description": "Fast CVE and misconfiguration scanner (Nuclei)",
     "input_schema": {
         "type": "object",
         "properties": {

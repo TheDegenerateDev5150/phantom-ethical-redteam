@@ -35,3 +35,14 @@ debug: true
 autonomous: true
 max_autonomous_turns: 50
 pause_every_n_turns: 10
+
+# Interactive mode — allow agent to use request_human_input tool and operator to
+# respond at pause points. Set false for fully headless/CI execution.
+interactive: true
+
+# sqlmap default timeout in seconds — increase for complex or slow targets
+sqlmap_timeout: 300
+
+# Context compaction — tool results older than this many turns are truncated to
+# 400 chars to prevent context overflow during long missions
+context_compact_after: 5

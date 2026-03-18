@@ -233,6 +233,20 @@ if (-not (Get-Command ffuf -ErrorAction SilentlyContinue)) {
     Write-Host "✅ ffuf installed" -ForegroundColor Green
 }
 
+# Default wordlist for ffuf (SecLists — shared with run_payloads PATT wordlists)
+New-Item -ItemType Directory -Force -Path "wordlists" | Out-Null
+if (-not (Test-Path "wordlists\directory-list-2.3-medium.txt")) {
+    Write-Host "Downloading default wordlist (SecLists)..."
+    try {
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt" `
+            -OutFile "wordlists\directory-list-2.3-medium.txt" -UseBasicParsing
+        $lines = (Get-Content "wordlists\directory-list-2.3-medium.txt").Count
+        Write-Host "✅ wordlist downloaded ($lines entries)" -ForegroundColor Green
+    } catch {
+        Write-Host "⚠️  wordlist download failed — use run_payloads to generate PATT wordlists" -ForegroundColor Yellow
+    }
+}
+
 # sqlmap (Python-based, works on Windows)
 if (-not (Test-Path "tools\sqlmap_repo")) {
     Write-Host "Cloning sqlmap..."

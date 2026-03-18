@@ -1,6 +1,6 @@
 import logging
 from tools import ALL_TOOLS
-from tools import nuclei, sqlmap, ffuf, recon, set_phish, cleanup, bettercap, zphisher, cyberstrike, read_log, payloads
+from tools import nuclei, sqlmap, ffuf, recon, set_phish, cleanup, bettercap, zphisher, cyberstrike, read_log, payloads, human_input, report
 from providers import get_provider
 
 
@@ -22,9 +22,41 @@ class AgentClient:
             "run_cyberstrike": cyberstrike.run,
             "read_log": read_log.run,
             "run_payloads": payloads.run,
+            "request_human_input": human_input.run,
+            "generate_report": report.run,
         }
 
+    def _compact_old_tool_results(self, messages: list, keep_last_n: int = 3) -> list:
+        """Truncate content of old tool_result blocks to avoid context overflow."""
+        # Identify indices of turns that contain tool results
+        tool_result_indices = [
+            i for i, m in enumerate(messages)
+            if m.get("role") == "user"
+            and isinstance(m.get("content"), list)
+            and any(b.get("type") == "tool_result" for b in m["content"])
+        ]
+        # Only compact turns older than the last keep_last_n tool result turns
+        to_compact = set(tool_result_indices[:-keep_last_n]) if len(tool_result_indices) > keep_last_n else set()
+        if not to_compact:
+            return messages
+
+        result = []
+        for i, msg in enumerate(messages):
+            if i in to_compact:
+                compacted = []
+                for block in msg["content"]:
+                    if block.get("type") == "tool_result":
+                        content = str(block.get("content", ""))
+                        if len(content) > 400:
+                            block = {**block, "content": content[:400] + " [...compacted]"}
+                    compacted.append(block)
+                result.append({**msg, "content": compacted})
+            else:
+                result.append(msg)
+        return result
+
     def think(self, messages: list, system_prompt: str) -> list:
+        messages = self._compact_old_tool_results(messages)
         text_blocks, tool_calls = self.provider.call(messages, system_prompt, self.tools)
 
         new_messages = messages.copy()

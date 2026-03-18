@@ -1,8 +1,8 @@
 import os
 import requests
 
-LOGS_DIR = "logs"
-WORDLISTS_DIR = os.path.join(LOGS_DIR, "wordlists")
+# Wordlists live at project root — same dir as the installer downloads (#5/#13 link)
+WORDLISTS_DIR = "wordlists"
 PATT_BASE = "https://raw.githubusercontent.com/swisskyrepo/PayloadsAllTheThings/master"
 
 # category → path in the PATT repo (URL-encoded spaces)

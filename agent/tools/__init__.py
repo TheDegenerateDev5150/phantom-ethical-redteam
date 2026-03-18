@@ -9,8 +9,11 @@ from .zphisher import run as generate_zphisher_template, TOOL_SPEC as zphisher_s
 from .cyberstrike import run as run_cyberstrike, TOOL_SPEC as cyberstrike_spec
 from .read_log import run as read_log, TOOL_SPEC as read_log_spec
 from .payloads import run as run_payloads, TOOL_SPEC as payloads_spec
+from .human_input import run as request_human_input, TOOL_SPEC as human_input_spec
+from .report import run as generate_report, TOOL_SPEC as report_spec
 
 ALL_TOOLS = [
     nuclei_spec, sqlmap_spec, ffuf_spec, recon_spec, phish_spec, cleanup_spec,
-    bettercap_spec, zphisher_spec, cyberstrike_spec, read_log_spec, payloads_spec
+    bettercap_spec, zphisher_spec, cyberstrike_spec,
+    read_log_spec, payloads_spec, human_input_spec, report_spec,
 ]

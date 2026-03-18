@@ -5,10 +5,15 @@ import tempfile
 
 
 def run() -> str:
+    """
+    Remove only Phantom's own temporary files.
+    Preserves: logs/<session>/ directories (mission reports, scan results).
+    Removes:   logs/temp/  and  /tmp/phantom_*
+    """
     deleted = []
     errors = []
 
-    # Fixed path
+    # Explicit temp dir inside logs/ (never touches session subdirs)
     logs_temp = os.path.join("logs", "temp")
     if os.path.exists(logs_temp):
         try:
@@ -17,7 +22,7 @@ def run() -> str:
         except Exception as e:
             errors.append(f"{logs_temp}: {e}")
 
-    # Glob-expanded paths — cross-platform temp directory
+    # OS temp directory — only phantom-prefixed entries
     tmp_dir = tempfile.gettempdir()
     for path in glob.glob(os.path.join(tmp_dir, "phantom_*")):
         try:
@@ -32,12 +37,15 @@ def run() -> str:
     if errors:
         return f"⚠️ Cleanup partial — deleted: {deleted}, errors: {errors}"
     if deleted:
-        return f"✅ Temporary files deleted: {deleted}"
-    return "✅ Nothing to clean"
+        return f"✅ Temp files deleted: {deleted}\n   (Mission reports in logs/<session>/ are preserved)"
+    return "✅ Nothing to clean (mission reports in logs/<session>/ preserved)"
 
 
 TOOL_SPEC = {
     "name": "cleanup_temp",
-    "description": "Secure cleanup of the temp files (ghost mode)",
+    "description": (
+        "Remove Phantom's own temporary files (logs/temp/, /tmp/phantom_*). "
+        "Mission reports and scan results in logs/<session>/ are always preserved."
+    ),
     "input_schema": {"type": "object", "properties": {}},
 }

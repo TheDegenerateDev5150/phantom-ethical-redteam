@@ -200,6 +200,16 @@ echo "-----------------------------------------"
 sudo apt update -q
 sudo apt install -y curl wget unzip git nmap sqlmap bettercap golang-go python3 python3-pip python3-venv
 
+# Default wordlist for ffuf (SecLists — directory-list-2.3-medium)
+mkdir -p wordlists
+if [ ! -f "wordlists/directory-list-2.3-medium.txt" ]; then
+    echo "→ Downloading default wordlist (SecLists)..."
+    wget -q "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt" \
+        -O "wordlists/directory-list-2.3-medium.txt" \
+        && echo "✅ wordlist downloaded ($(wc -l < wordlists/directory-list-2.3-medium.txt) entries)" \
+        || echo "⚠️  wordlist download failed — use run_payloads to generate PATT wordlists"
+fi
+
 # nuclei — not in apt, install from GitHub Releases
 if ! command -v nuclei &>/dev/null; then
     echo "→ Installing nuclei..."
