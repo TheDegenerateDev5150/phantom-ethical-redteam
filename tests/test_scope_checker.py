@@ -23,9 +23,9 @@ def scope_file(tmp_path):
 
 class TestLoadScopeTargets:
     def test_single_url(self, scope_file):
-        f = scope_file("**Scope:** https://target.com")
+        f = scope_file("**Scope:** http://dummytarget.com")
         targets = load_scope_targets(f)
-        assert "target.com" in targets
+        assert "dummytarget.com" in targets
 
     def test_multiple_urls(self, scope_file):
         f = scope_file("https://a.com\nhttps://b.com\nhttps://c.com")
@@ -45,9 +45,9 @@ class TestLoadScopeTargets:
         assert "10.0.0.0/24" in targets
 
     def test_comments_ignored(self, scope_file):
-        f = scope_file("# This is a comment\nhttps://target.com")
+        f = scope_file("# This is a comment\nhttp://dummytarget.com")
         targets = load_scope_targets(f)
-        assert "target.com" in targets
+        assert "dummytarget.com" in targets
 
     def test_empty_file(self, scope_file):
         f = scope_file("")
@@ -59,39 +59,39 @@ class TestLoadScopeTargets:
         assert targets == []
 
     def test_strips_port(self, scope_file):
-        f = scope_file("https://target.com:8443/path")
+        f = scope_file("http://dummytarget.com:8443/path")
         targets = load_scope_targets(f)
-        assert "target.com" in targets
+        assert "dummytarget.com" in targets
 
     def test_deduplication(self, scope_file):
-        f = scope_file("https://target.com\nhttps://target.com/admin")
+        f = scope_file("http://dummytarget.com\nhttp://dummytarget.com/admin")
         targets = load_scope_targets(f)
-        assert targets.count("target.com") == 1
+        assert targets.count("dummytarget.com") == 1
 
 
 class TestIsInScope:
     def test_exact_match(self, scope_file):
-        f = scope_file("https://target.com")
-        assert is_in_scope("target.com", f) is True
+        f = scope_file("http://dummytarget.com")
+        assert is_in_scope("dummytarget.com", f) is True
 
     def test_exact_match_url(self, scope_file):
-        f = scope_file("https://target.com")
-        assert is_in_scope("https://target.com/admin", f) is True
+        f = scope_file("http://dummytarget.com")
+        assert is_in_scope("http://dummytarget.com/admin", f) is True
 
     def test_subdomain_in_scope(self, scope_file):
-        f = scope_file("https://target.com")
-        assert is_in_scope("sub.target.com", f) is True
+        f = scope_file("http://dummytarget.com")
+        assert is_in_scope("sub.dummytarget.com", f) is True
 
     def test_deep_subdomain(self, scope_file):
-        f = scope_file("https://target.com")
-        assert is_in_scope("deep.sub.target.com", f) is True
+        f = scope_file("http://dummytarget.com")
+        assert is_in_scope("deep.sub.dummytarget.com", f) is True
 
     def test_out_of_scope(self, scope_file):
-        f = scope_file("https://target.com")
+        f = scope_file("http://dummytarget.com")
         assert is_in_scope("evil.com", f) is False
 
     def test_similar_but_different(self, scope_file):
-        f = scope_file("https://target.com")
+        f = scope_file("http://dummytarget.com")
         assert is_in_scope("nottarget.com", f) is False
 
     def test_case_insensitive(self, scope_file):
@@ -119,27 +119,27 @@ class TestIsInScope:
         assert is_in_scope("anything.com", f) is True
 
     def test_url_with_port(self, scope_file):
-        f = scope_file("https://target.com")
-        assert is_in_scope("https://target.com:8080", f) is True
+        f = scope_file("http://dummytarget.com")
+        assert is_in_scope("http://dummytarget.com:8080", f) is True
 
     def test_whitespace_target(self, scope_file):
-        f = scope_file("https://target.com")
-        assert is_in_scope("  target.com  ", f) is True
+        f = scope_file("http://dummytarget.com")
+        assert is_in_scope("  dummytarget.com  ", f) is True
 
 
 class TestScopeGuard:
     def test_in_scope_returns_none(self, scope_file):
-        f = scope_file("https://target.com")
-        assert scope_guard("target.com", f) is None
+        f = scope_file("http://dummytarget.com")
+        assert scope_guard("dummytarget.com", f) is None
 
     def test_out_of_scope_returns_error(self, scope_file):
-        f = scope_file("https://target.com")
+        f = scope_file("http://dummytarget.com")
         result = scope_guard("evil.com", f)
         assert result is not None
         assert "SCOPE VIOLATION" in result
         assert "evil.com" in result
 
     def test_error_contains_authorized_targets(self, scope_file):
-        f = scope_file("https://target.com")
+        f = scope_file("http://dummytarget.com")
         result = scope_guard("evil.com", f)
-        assert "target.com" in result
+        assert "dummytarget.com" in result

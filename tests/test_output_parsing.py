@@ -27,7 +27,7 @@ class TestNucleiParsing:
                     "severity": "critical",
                     "classification": {"cve-id": ["CVE-2021-44228"]},
                 },
-                "matched-at": "https://target.com/api",
+                "matched-at": "http://dummytarget.com/api",
             },
             {
                 "template-id": "cve-2023-1234",
@@ -36,7 +36,7 @@ class TestNucleiParsing:
                     "severity": "high",
                     "classification": {"cve-id": ["CVE-2023-1234"]},
                 },
-                "matched-at": "https://target.com/login",
+                "matched-at": "http://dummytarget.com/login",
             },
         ]
         path = self._write_jsonl(tmp_path, findings)
@@ -68,7 +68,7 @@ class TestNucleiParsing:
         assert len(parsed) == 2
 
     def test_missing_info_field(self, tmp_path):
-        path = self._write_jsonl(tmp_path, [{"template-id": "test", "host": "target.com"}])
+        path = self._write_jsonl(tmp_path, [{"template-id": "test", "host": "dummytarget.com"}])
         content = path.read_text()
         entry = json.loads(content.strip())
         # Should not crash when accessing info
@@ -78,7 +78,7 @@ class TestNucleiParsing:
         entry = {
             "template-id": "misconfig-001",
             "info": {"name": "Misconfig", "severity": "medium", "classification": {}},
-            "matched-at": "https://target.com",
+            "matched-at": "http://dummytarget.com",
         }
         path = self._write_jsonl(tmp_path, [entry])
         parsed = json.loads(path.read_text().strip())
@@ -92,8 +92,8 @@ class TestFfufParsing:
     def test_valid_results(self, tmp_path):
         data = {
             "results": [
-                {"status": 200, "url": "https://target.com/admin", "length": 1234},
-                {"status": 301, "url": "https://target.com/api", "length": 0},
+                {"status": 200, "url": "http://dummytarget.com/admin", "length": 1234},
+                {"status": 301, "url": "http://dummytarget.com/api", "length": 0},
             ]
         }
         path = tmp_path / "ffuf.json"

@@ -127,7 +127,7 @@ TOOL_SPEC = {
         "properties": {
             "title": {
                 "type": "string",
-                "description": "Report title, e.g. 'Pentest Report \u2014 target.com \u2014 2026-03-18'",
+                "description": "Report title, e.g. 'Pentest Report \u2014 dummytarget.com \u2014 2026-03-18'",
             },
             "content": {
                 "type": "string",

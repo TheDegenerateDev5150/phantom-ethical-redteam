@@ -102,7 +102,7 @@ Enter your ANTHROPIC_API_KEY : sk-ant-...
   → Testing connection... OK
 
 [ STEP 2 / 3 ] Authorized Scope
-Target URL : https://target.com
+Target URL : http://dummytarget.com
 Authorization note : Pentest contract signed 2026-03-15
 
 [ STEP 3 / 3 ] Installing dependencies...
@@ -300,8 +300,8 @@ context_compact_after: 5     # truncate old tool results after N turns
 
 ```markdown
 # Authorized targets
-https://target.com
-https://api.target.com
+http://dummytarget.com
+http://api.dummytarget.com
 192.168.1.0/24
 
 # Authorization: Pentest contract signed 2026-03-15
