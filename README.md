@@ -111,18 +111,15 @@ Authorization note : Pentest contract signed 2026-03-15
 
 > `chmod +x install.sh` is required once after cloning. Phantom launches automatically at the end.
 
-### Windows (PowerShell)
+### Windows
 
-Files downloaded from the internet are blocked by Windows by default. Run these commands **as-is** in PowerShell (no Admin required):
+Double-click **`install.bat`** — or from a terminal:
 
-```powershell
-Unblock-File .\install.ps1
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+install.bat
 ```
 
-> **Why two commands?**
-> - `Unblock-File` removes the "downloaded from internet" mark Windows puts on files from GitHub/zip archives.
-> - `-ExecutionPolicy Bypass` bypasses the execution policy for this one call only — nothing is changed system-wide.
+No PowerShell execution policy issue. The `.bat` launcher handles everything.
 
 Same interactive flow (provider -> API key -> scope -> dependencies).
 Windows limitations: `bettercap` and `zphisher` require WSL2.
