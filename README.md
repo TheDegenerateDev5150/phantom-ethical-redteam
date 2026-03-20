@@ -15,7 +15,7 @@ Uses Nmap, Nuclei, sqlmap, ffuf, WhatWeb, advanced reconnaissance, screenshots, 
 - **20 built-in tools** with native tool-calling on any supported LLM
 - **Parallel tool execution** — multiple tools run concurrently
 - **Mission resume** — interrupted missions can be resumed from saved state
-- **Web dashboard** — real-time monitoring via Flask + WebSocket (port 5000)
+- **Web dashboard** — live charts (Chart.js), structured tables, mission summary, session replay (port 5000)
 - **Multi-target scope** with CIDR support and strict enforcement
 - Full structured logging (console + file) + automatic cleanup
 - Pause every N turns — human can stop, continue, or force a report
@@ -148,14 +148,23 @@ python3 agent/main.py --resume 20260318_120000
 
 Phantom reloads the saved state (messages, turn count) from `logs/<session>/state.json` and continues where it left off.
 
-### Web Dashboard
+### Web Dashboard (v2.1)
 
 ```bash
-pip install flask flask-socketio flask-cors
-python -m web.app
+cd Phantom/web
+python app.py
 ```
 
-Open `http://localhost:5000` — real-time terminal output, tool execution timeline, findings summary, session browser, and report viewer.
+Open `http://localhost:5000` — full monitoring dashboard with 4 tabs:
+
+| Tab | Content |
+|---|---|
+| **Terminal** | Live color-coded output with turn separators, tool timeline bar |
+| **Charts** | Findings by severity (donut), open ports (bar), tools usage (pie), HTTP status codes from ffuf (bar) — all powered by Chart.js, updated in real time |
+| **Tables** | Structured findings with severity badges, nmap ports with open/filtered/closed indicators, ffuf paths with HTTP status colors |
+| **Mission Summary** | Auto-displayed on mission complete — stat cards (critical/high/medium/tools/turns/duration), summary charts, and agent narrative |
+
+Click any past session in the sidebar to replay all charts and tables from `state.json`.
 
 ### Compare missions (remediation tracking)
 
