@@ -82,6 +82,27 @@ if args.resume:
 else:
     session_dir = init_session()
 
+# --- Secret redaction filter ---
+import re as _re
+
+class _SecretRedactFilter(logging.Filter):
+    """Redact API keys, passwords, and tokens from log output."""
+    _PATTERNS = [
+        _re.compile(r'(sk-[a-zA-Z0-9]{20,})'),                    # Anthropic/OpenAI keys
+        _re.compile(r'(xai-[a-zA-Z0-9]{20,})'),                   # xAI keys
+        _re.compile(r'(Bearer\s+[A-Za-z0-9\-._~+/]+=*)'),         # Bearer tokens
+        _re.compile(r'(Basic\s+[A-Za-z0-9+/]+=*)'),               # Basic auth
+        _re.compile(r'(?i)(api[_-]?key\s*[=:]\s*)\S+'),           # Generic api_key=...
+        _re.compile(r'(?i)(password\s*[=:]\s*)\S+'),               # password=...
+    ]
+
+    def filter(self, record):
+        msg = str(record.msg)
+        for pattern in self._PATTERNS:
+            msg = pattern.sub(r'[REDACTED]', msg)
+        record.msg = msg
+        return True
+
 # --- Structured logging: console (INFO) + file (DEBUG) ---
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
@@ -90,10 +111,12 @@ file_handler = logging.FileHandler(
 )
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(log_formatter)
+file_handler.addFilter(_SecretRedactFilter())
 
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+console_handler.addFilter(_SecretRedactFilter())
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.DEBUG)

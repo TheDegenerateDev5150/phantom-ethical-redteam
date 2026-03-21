@@ -58,8 +58,19 @@ class AgentClient:
                 "content": f"Unknown tool: {tc['name']}",
             }
 
+        # Validate input is a dict (LLM may return malformed arguments)
+        tool_input = tc.get("input")
+        if not isinstance(tool_input, dict):
+            logger.warning("Tool %s received non-dict input: %s", tc["name"], type(tool_input))
+            return {
+                "type": "tool_result",
+                "tool_use_id": tc["id"],
+                "content": f"Error: tool input must be a dict, got {type(tool_input).__name__}",
+            }
+
         try:
-            result = tool_func(**tc["input"])
+            result = tool_func(**tool_input)
+            logger.debug("AUDIT tool=%s params=%s status=ok", tc["name"], list(tool_input.keys()))
             return {
                 "type": "tool_result",
                 "tool_use_id": tc["id"],
@@ -67,7 +78,7 @@ class AgentClient:
             }
         except Exception as e:
             error_msg = f"Error {tc['name']}: {str(e)}"
-            logger.error(error_msg)
+            logger.error("AUDIT tool=%s status=error error=%s", tc["name"], e)
             return {
                 "type": "tool_result",
                 "tool_use_id": tc["id"],
@@ -99,7 +110,7 @@ class AgentClient:
 
     def think(self, messages: list, system_prompt: str) -> list:
         messages = self._compact_old_tool_results(messages)
-        text_blocks, tool_calls = self.provider.call(messages, system_prompt, self.tools)
+        text_blocks, tool_calls = self.provider.call_with_retry(messages, system_prompt, self.tools)
 
         new_messages = messages.copy()
 
@@ -133,23 +144,40 @@ class AgentClient:
         return new_messages
 
     def save_state(self, messages: list, turn: int, session_dir: str):
-        """Persist mission state for resume capability."""
+        """Persist mission state for resume capability (atomic write)."""
         import os
-        state = {
-            "turn": turn,
-            "messages": messages,
-        }
-        state_path = os.path.join(session_dir, "state.json")
-        with open(state_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=1)
-        logger.debug("State saved at turn %d", turn)
+        import tempfile
+        try:
+            state = {"turn": turn, "messages": messages}
+            state_path = os.path.join(session_dir, "state.json")
+            # Atomic write: temp file then rename — prevents corruption on crash
+            fd, tmp_path = tempfile.mkstemp(dir=session_dir, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(state, f, ensure_ascii=False, indent=1)
+                os.replace(tmp_path, state_path)
+            except Exception:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                raise
+            logger.debug("State saved at turn %d", turn)
+        except Exception as e:
+            logger.error("Failed to save state at turn %d: %s", turn, e)
 
     @staticmethod
     def load_state(session_dir: str) -> dict | None:
-        """Load mission state from a session directory."""
+        """Load mission state from a session directory (with validation)."""
         import os
         state_path = os.path.join(session_dir, "state.json")
         if not os.path.exists(state_path):
             return None
-        with open(state_path, encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(state_path, encoding="utf-8") as f:
+                state = json.load(f)
+            if not isinstance(state, dict) or "turn" not in state or "messages" not in state:
+                logger.warning("Corrupted state.json — missing required keys")
+                return None
+            return state
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error("Failed to load state: %s", e)
+            return None

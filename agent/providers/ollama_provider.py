@@ -1,6 +1,9 @@
 import json
+import logging
 import ollama as ollama_client
 from .base import BaseLLMProvider
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaProvider(BaseLLMProvider):
@@ -11,6 +14,7 @@ class OllamaProvider(BaseLLMProvider):
     def __init__(self, model: str = None, host: str = "http://localhost:11434"):
         self.model = model or self.DEFAULT_MODEL
         self.host = host
+        self._client = ollama_client.Client(host=host, timeout=self.TIMEOUT)
 
     def convert_tools(self, tools: list) -> list:
         return [
@@ -67,7 +71,7 @@ class OllamaProvider(BaseLLMProvider):
         return converted
 
     def call(self, messages: list, system_prompt: str, tools: list) -> tuple:
-        response = ollama_client.chat(
+        response = self._client.chat(
             model=self.model,
             messages=self._to_provider_messages(messages, system_prompt),
             tools=tools,
@@ -80,10 +84,16 @@ class OllamaProvider(BaseLLMProvider):
         if msg.tool_calls:
             for i, tc in enumerate(msg.tool_calls):
                 args = tc.function.arguments
+                if not isinstance(args, dict):
+                    try:
+                        args = json.loads(args)
+                    except (json.JSONDecodeError, TypeError) as e:
+                        logger.error("Malformed tool arguments for %s: %s", tc.function.name, e)
+                        args = {}
                 tool_calls.append({
                     "id": f"ollama-{tc.function.name}-{i}",
                     "name": tc.function.name,
-                    "input": args if isinstance(args, dict) else json.loads(args),
+                    "input": args,
                 })
 
         return text_blocks, tool_calls

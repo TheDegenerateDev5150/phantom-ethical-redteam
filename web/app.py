@@ -5,21 +5,50 @@ import re
 import sys
 import json
 import time
+import logging
 import threading
+import functools
 from pathlib import Path
 from datetime import datetime
 
 from flask import Flask, render_template, jsonify, request, send_file
-from flask_socketio import SocketIO
-from flask_cors import CORS
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = PROJECT_ROOT / "logs"
 
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.urandom(24).hex()
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+app.config["SECRET_KEY"] = os.environ.get(
+    "PHANTOM_DASHBOARD_SECRET", os.urandom(24).hex()
+)
+
+# --- Dashboard authentication via API key ---
+# Set PHANTOM_DASHBOARD_KEY env var to enable auth. If unset, dashboard is open.
+DASHBOARD_KEY = os.environ.get("PHANTOM_DASHBOARD_KEY", "")
+
+
+def require_auth(f):
+    """Decorator: require ?key= or X-API-Key header if PHANTOM_DASHBOARD_KEY is set."""
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        if not DASHBOARD_KEY:
+            return f(*args, **kwargs)
+        provided = request.args.get("key") or request.headers.get("X-API-Key", "")
+        if provided != DASHBOARD_KEY:
+            return jsonify({"error": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+
+# Only import CORS/SocketIO after app is created
+from flask_cors import CORS
+from flask_socketio import SocketIO
+
+# Restrict CORS to localhost by default; override with PHANTOM_CORS_ORIGIN
+_cors_origin = os.environ.get("PHANTOM_CORS_ORIGIN", "http://localhost:*")
+CORS(app, origins=[_cors_origin])
+socketio = SocketIO(app, cors_allowed_origins=_cors_origin, async_mode="threading")
 
 # Track running mission
 _mission_thread = None
@@ -161,6 +190,7 @@ def index():
 
 
 @app.route("/api/sessions")
+@require_auth
 def list_sessions():
     sessions = []
     if LOGS_DIR.exists():
@@ -187,6 +217,7 @@ def list_sessions():
 
 
 @app.route("/api/sessions/<session_id>")
+@require_auth
 def session_detail(session_id):
     session_dir = LOGS_DIR / session_id
     if not session_dir.is_dir():
@@ -214,17 +245,28 @@ def session_detail(session_id):
 
 
 @app.route("/api/sessions/<session_id>/logs/<path:filename>")
+@require_auth
 def read_log(session_id, filename):
-    file_path = (LOGS_DIR / session_id / filename).resolve()
-    if not str(file_path).startswith(str(LOGS_DIR.resolve())):
+    # Strict path traversal protection
+    safe_session = os.path.basename(session_id)
+    safe_filename = os.path.basename(filename)
+    if safe_session != session_id or safe_filename != filename:
+        return jsonify({"error": "Invalid path"}), 400
+    if ".." in filename or filename.startswith("/"):
+        return jsonify({"error": "Invalid path"}), 400
+
+    file_path = (LOGS_DIR / safe_session / safe_filename).resolve()
+    logs_resolved = LOGS_DIR.resolve()
+    if not str(file_path).startswith(str(logs_resolved)):
         return jsonify({"error": "Access denied"}), 403
     if not file_path.exists():
         return jsonify({"error": "File not found"}), 404
     content = file_path.read_text(encoding="utf-8", errors="replace")
-    return jsonify({"filename": filename, "content": content[:100000]})
+    return jsonify({"filename": safe_filename, "content": content[:100000]})
 
 
 @app.route("/api/sessions/<session_id>/state")
+@require_auth
 def read_state(session_id):
     """Read and parse state.json for a past session — extract structured data."""
     state_path = LOGS_DIR / session_id / "state.json"
@@ -312,6 +354,7 @@ def read_state(session_id):
 
 
 @app.route("/api/sessions/<session_id>/report")
+@require_auth
 def get_report(session_id):
     session_dir = LOGS_DIR / session_id
     reports = sorted(session_dir.glob("report_*.html"), reverse=True)
@@ -325,6 +368,7 @@ def get_report(session_id):
 # ---------------------------------------------------------------------------
 
 @app.route("/api/missions/start", methods=["POST"])
+@require_auth
 def start_mission():
     global _mission_thread
     if _mission_thread and _mission_thread.is_alive():
@@ -491,9 +535,9 @@ def start_mission():
 
         except Exception as e:
             import traceback
+            logger.error("Mission failed:\n%s", traceback.format_exc())
             socketio.emit("mission_error", {
-                "error": str(e),
-                "traceback": traceback.format_exc(),
+                "error": f"Mission failed: {type(e).__name__}. Check server logs for details.",
             })
 
     _mission_thread = threading.Thread(target=run_mission, daemon=True)
@@ -502,6 +546,7 @@ def start_mission():
 
 
 @app.route("/api/missions/stop", methods=["POST"])
+@require_auth
 def stop_mission():
     _mission_stop.set()
     return jsonify({"status": "stopping"})
@@ -509,9 +554,15 @@ def stop_mission():
 
 @socketio.on("connect")
 def on_connect():
+    if DASHBOARD_KEY:
+        provided = request.args.get("key", "")
+        if provided != DASHBOARD_KEY:
+            return False  # Reject WebSocket connection
     running = _mission_thread is not None and _mission_thread.is_alive()
     socketio.emit("connected", {"status": "ok", "mission_running": running})
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True, allow_unsafe_werkzeug=True)
+    host = os.environ.get("PHANTOM_DASHBOARD_HOST", "127.0.0.1")
+    port = int(os.environ.get("PHANTOM_DASHBOARD_PORT", "5000"))
+    socketio.run(app, host=host, port=port, debug=True, allow_unsafe_werkzeug=True)

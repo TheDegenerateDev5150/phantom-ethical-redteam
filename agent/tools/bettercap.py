@@ -4,6 +4,8 @@ import logging
 import platform
 import subprocess
 
+from .scope_checker import scope_guard
+
 logger = logging.getLogger(__name__)
 
 
@@ -13,9 +15,15 @@ def _default_interface() -> str:
     return "eth0"
 
 
-def run(interface: str = "", module: str = "net.probe", duration: int = 30) -> str:
+def run(target: str = "", interface: str = "", module: str = "net.probe", duration: int = 30) -> str:
     if platform.system() == "Windows":
         return "Bettercap is not supported on Windows. Use WSL2 for network MITM."
+
+    # Scope enforcement — target is optional for net.probe but required for targeted attacks
+    if target:
+        guard = scope_guard(target)
+        if guard:
+            return guard
 
     if not interface:
         interface = _default_interface()
@@ -36,10 +44,11 @@ def run(interface: str = "", module: str = "net.probe", duration: int = 30) -> s
 
 TOOL_SPEC = {
     "name": "run_bettercap",
-    "description": "MITM, network probe, WiFi, Bluetooth (only in authorized lab)",
+    "description": "MITM, network probe, WiFi, Bluetooth (only in authorized lab). Requires target in scope.",
     "input_schema": {
         "type": "object",
         "properties": {
+            "target": {"type": "string", "description": "Target IP or network (must be in scope)"},
             "interface": {"type": "string", "default": "eth0"},
             "module": {"type": "string", "default": "net.probe"},
             "duration": {"type": "integer", "default": 30},

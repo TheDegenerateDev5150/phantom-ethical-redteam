@@ -7,7 +7,7 @@ class AnthropicProvider(BaseLLMProvider):
     DEFAULT_MODEL = "claude-sonnet-4-6"
 
     def __init__(self, api_key: str, model: str = None):
-        self.client = Anthropic(api_key=api_key)
+        self.client = Anthropic(api_key=api_key, timeout=self.TIMEOUT)
         self.model = model or self.DEFAULT_MODEL
 
     def convert_tools(self, tools: list) -> list:

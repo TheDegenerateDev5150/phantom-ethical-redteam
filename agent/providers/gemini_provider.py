@@ -129,7 +129,14 @@ class GeminiProvider(BaseLLMProvider):
         text_blocks = []
         tool_calls = []
 
-        for i, part in enumerate(response.candidates[0].content.parts):
+        try:
+            parts = response.candidates[0].content.parts
+        except (IndexError, AttributeError):
+            import logging
+            logging.getLogger(__name__).error("Gemini returned no candidates")
+            return [], []
+
+        for i, part in enumerate(parts):
             if hasattr(part, "text") and part.text:
                 text_blocks.append(part.text)
             if hasattr(part, "function_call") and part.function_call and part.function_call.name:

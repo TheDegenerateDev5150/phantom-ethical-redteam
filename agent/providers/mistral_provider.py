@@ -1,6 +1,9 @@
 import json
+import logging
 from mistralai import Mistral
 from .base import BaseLLMProvider
+
+logger = logging.getLogger(__name__)
 
 
 class MistralProvider(BaseLLMProvider):
@@ -8,7 +11,7 @@ class MistralProvider(BaseLLMProvider):
     DEFAULT_MODEL = "mistral-large-latest"
 
     def __init__(self, api_key: str, model: str = None):
-        self.client = Mistral(api_key=api_key)
+        self.client = Mistral(api_key=api_key, timeout=self.TIMEOUT)
         self.model = model or self.DEFAULT_MODEL
 
     def convert_tools(self, tools: list) -> list:
@@ -77,16 +80,25 @@ class MistralProvider(BaseLLMProvider):
             temperature=0.0,
         )
 
+        if not response.choices:
+            logger.error("Mistral API returned no choices")
+            return [], []
+
         choice = response.choices[0].message
         text_blocks = [choice.content] if choice.content else []
         tool_calls = []
 
         if choice.tool_calls:
             for tc in choice.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.error("Malformed tool arguments for %s: %s", tc.function.name, e)
+                    args = {}
                 tool_calls.append({
                     "id": tc.id,
                     "name": tc.function.name,
-                    "input": json.loads(tc.function.arguments),
+                    "input": args,
                 })
 
         return text_blocks, tool_calls
