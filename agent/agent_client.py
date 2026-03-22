@@ -1,8 +1,12 @@
 """Agentic loop with parallel tool execution and state persistence."""
 
+from __future__ import annotations
+
 import json
 import logging
+import os
 import re
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tools import ALL_TOOLS, get_tool_mapping
@@ -30,7 +34,7 @@ class AgentClient:
         self._stall_threshold = config.get("stall_threshold", 3)
         self._total_findings = 0
 
-    def _compact_old_tool_results(self, messages: list, keep_last_n: int = 3) -> list:
+    def _compact_old_tool_results(self, messages: list[dict], keep_last_n: int = 3) -> list[dict]:
         """Truncate content of old tool_result blocks to avoid context overflow."""
         tool_result_indices = [
             i for i, m in enumerate(messages)
@@ -57,7 +61,7 @@ class AgentClient:
                 result.append(msg)
         return result
 
-    def _execute_tool(self, tc: dict) -> dict:
+    def _execute_tool(self, tc: dict) -> dict[str, str]:
         """Execute a single tool call and return the result block."""
         tool_func = self.mapping.get(tc["name"])
         if not tool_func:
@@ -95,7 +99,7 @@ class AgentClient:
                 "content": error_msg,
             }
 
-    def _execute_tools_parallel(self, tool_calls: list) -> list:
+    def _execute_tools_parallel(self, tool_calls: list[dict]) -> list[dict]:
         """Execute multiple tool calls in parallel."""
         if len(tool_calls) == 1:
             return [self._execute_tool(tool_calls[0])]
@@ -118,7 +122,7 @@ class AgentClient:
                     }
         return results
 
-    def _estimate_tokens(self, messages: list) -> int:
+    def _estimate_tokens(self, messages: list[dict]) -> int:
         """Rough token estimate (1 token ~ 4 chars)."""
         total = 0
         for msg in messages:
@@ -134,7 +138,7 @@ class AgentClient:
         """Count severity-tagged findings in agent text."""
         return len(_SEVERITY_RE.findall(text))
 
-    def think(self, messages: list, system_prompt: str) -> list:
+    def think(self, messages: list[dict], system_prompt: str) -> list[dict]:
         # Proactive context compaction based on estimated size
         estimated_tokens = self._estimate_tokens(messages) + len(system_prompt) // 4
         if estimated_tokens > 50000:
@@ -202,10 +206,8 @@ class AgentClient:
 
         return new_messages
 
-    def save_state(self, messages: list, turn: int, session_dir: str):
+    def save_state(self, messages: list, turn: int, session_dir: str) -> None:
         """Persist mission state for resume capability (atomic write)."""
-        import os
-        import tempfile
         try:
             state = {"turn": turn, "messages": messages}
             state_path = os.path.join(session_dir, "state.json")
@@ -226,7 +228,6 @@ class AgentClient:
     @staticmethod
     def load_state(session_dir: str) -> dict | None:
         """Load mission state from a session directory (with validation)."""
-        import os
         state_path = os.path.join(session_dir, "state.json")
         if not os.path.exists(state_path):
             return None

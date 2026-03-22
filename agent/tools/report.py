@@ -10,13 +10,25 @@ logger = logging.getLogger(__name__)
 
 
 def _md_to_html_body(content: str) -> str:
-    """Minimal markdown -> HTML conversion (no external deps)."""
+    """Minimal markdown -> HTML conversion (no external deps).
+
+    Handles: headings (h1-h3), bold, inline code, fenced code blocks,
+    unordered lists (properly wrapped in <ul>), and paragraphs.
+    """
     lines = content.split("\n")
     out = []
     in_code = False
+    in_list = False
+
+    def _close_list() -> None:
+        nonlocal in_list
+        if in_list:
+            out.append("</ul>")
+            in_list = False
 
     for line in lines:
         if line.startswith("```"):
+            _close_list()
             if in_code:
                 out.append("</pre>")
                 in_code = False
@@ -30,23 +42,35 @@ def _md_to_html_body(content: str) -> str:
             out.append(html.escape(line))
             continue
 
-        line = html.escape(line)
-        line = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', line)
-        line = re.sub(r'`(.*?)`', r'<code>\1</code>', line)
+        escaped = html.escape(line)
+        escaped = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', escaped)
+        escaped = re.sub(r'`(.*?)`', r'<code>\1</code>', escaped)
 
-        if line.startswith("### "):
-            out.append(f"<h3>{line[4:]}</h3>")
-        elif line.startswith("## "):
-            out.append(f"<h2>{line[3:]}</h2>")
-        elif line.startswith("# "):
-            out.append(f"<h1>{line[2:]}</h1>")
+        if escaped.startswith("### "):
+            _close_list()
+            out.append(f"<h3>{escaped[4:]}</h3>")
+        elif escaped.startswith("## "):
+            _close_list()
+            out.append(f"<h2>{escaped[3:]}</h2>")
+        elif escaped.startswith("# "):
+            _close_list()
+            out.append(f"<h1>{escaped[2:]}</h1>")
         elif line.startswith("- ") or line.startswith("* "):
-            out.append(f"<li>{line[2:]}</li>")
-        elif not line.strip():
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
+            item_text = html.escape(line[2:])
+            item_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', item_text)
+            item_text = re.sub(r'`(.*?)`', r'<code>\1</code>', item_text)
+            out.append(f"<li>{item_text}</li>")
+        elif not escaped.strip():
+            _close_list()
             out.append("<br>")
         else:
-            out.append(f"<p>{line}</p>")
+            _close_list()
+            out.append(f"<p>{escaped}</p>")
 
+    _close_list()
     return "\n".join(out)
 
 

@@ -1,4 +1,4 @@
-// Phantom Dashboard v2 — Live monitoring with charts & tables
+// Phantom Dashboard v3 — Live monitoring with charts, tables, toasts & export
 
 const socket = io();
 
@@ -12,6 +12,7 @@ let ffufData = [];
 let currentTurn = 0;
 let missionStartTime = null;
 let timerInterval = null;
+let activeFilter = "all";
 
 // ---- Charts (lazy-init) ----
 let chartSeverity = null;
@@ -31,10 +32,13 @@ const COLORS = {
 
 socket.on("connect", () => {
     setStatus("Connected", true);
+    toast("Connected to dashboard", "success", 2500);
 });
 
 socket.on("disconnect", () => {
     setStatus("Disconnected", false);
+    toast("Dashboard disconnected", "error", 4000);
+    setMissionProgress(false);
 });
 
 socket.on("connected", (data) => {
@@ -43,6 +47,8 @@ socket.on("connected", (data) => {
         document.getElementById("btn-launch").disabled = true;
         document.getElementById("btn-stop").disabled = false;
         startTimer();
+        setMissionProgress(true);
+        toast("Mission already in progress", "info");
     }
 });
 
@@ -79,7 +85,6 @@ socket.on("tool_result", (data) => {
 });
 
 socket.on("tool_data", (data) => {
-    // Structured parsed data from tools
     if (data.label === "nmap" && data.data && data.data.ports) {
         data.data.ports.forEach(p => {
             portsData.push(p);
@@ -105,6 +110,12 @@ socket.on("finding", (data) => {
     addFindingEntry(data);
     addFindingRow(data);
     updateSeverityChart();
+
+    if (sev === "critical") {
+        toast("CRITICAL finding: " + (data.template || data.url || "New finding"), "error", 6000);
+    } else if (sev === "high") {
+        toast("HIGH finding: " + (data.template || data.url || "New finding"), "warning", 4000);
+    }
 });
 
 socket.on("mission_complete", (data) => {
@@ -112,10 +123,12 @@ socket.on("mission_complete", (data) => {
     document.getElementById("btn-launch").disabled = false;
     document.getElementById("btn-stop").disabled = true;
     stopTimer();
+    setMissionProgress(false);
     loadSessions();
     showMissionSummary(data);
-    // Auto-switch to summary tab
     switchTab(document.querySelector('[data-tab="summary-tab"]'));
+    const total = findings.critical + findings.high + findings.medium + findings.low + findings.info;
+    toast("Mission complete — " + total + " findings in " + (data.turns || currentTurn) + " turns", "success", 8000);
 });
 
 socket.on("mission_error", (data) => {
@@ -126,13 +139,48 @@ socket.on("mission_error", (data) => {
     document.getElementById("btn-launch").disabled = false;
     document.getElementById("btn-stop").disabled = true;
     stopTimer();
+    setMissionProgress(false);
+    toast("Mission error: " + data.error, "error", 8000);
 });
 
 socket.on("mission_status", (data) => {
     if (data.status === "running") {
         addTerminalLine("Mission started.", "system");
+        setMissionProgress(true);
     }
 });
+
+
+// ---- Toast Notifications ----
+
+function toast(message, type = "info", duration = 4000) {
+    const container = document.getElementById("toast-container");
+    const el = document.createElement("div");
+    el.className = "toast " + type;
+
+    const icons = { success: "✓", error: "✗", warning: "⚠", info: "ℹ" };
+    el.innerHTML = '<span class="toast-icon">' + (icons[type] || "ℹ") + '</span>' +
+                   '<span>' + escapeHtml(String(message)) + '</span>';
+    container.appendChild(el);
+
+    setTimeout(() => {
+        el.classList.add("toast-fade-out");
+        setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 350);
+    }, duration);
+}
+
+
+// ---- Mission Progress Bar ----
+
+function setMissionProgress(active) {
+    const bar = document.getElementById("mission-progress");
+    if (!bar) return;
+    if (active) {
+        bar.classList.add("active");
+    } else {
+        bar.classList.remove("active");
+    }
+}
 
 
 // ---- UI Functions ----
@@ -156,6 +204,7 @@ function addTerminalLine(text, type) {
 
 function clearTerminal() {
     document.getElementById("terminal-body").innerHTML = "";
+    toast("Terminal cleared", "info", 1500);
 }
 
 function addTimelineItem(name, id, status) {
@@ -164,14 +213,13 @@ function addTimelineItem(name, id, status) {
     item.className = "timeline-item " + status;
     item.textContent = name;
     item.dataset.toolId = id || "";
+    item.setAttribute("role", "listitem");
     bar.appendChild(item);
     toolTimeline.push(item);
-    // Keep last 50
     while (bar.children.length > 50) bar.removeChild(bar.firstChild);
 }
 
 function updateTimelineItem(id, status, duration) {
-    // Find by id or update last
     let target = null;
     for (let i = toolTimeline.length - 1; i >= 0; i--) {
         if (toolTimeline[i].dataset.toolId === id) {
@@ -196,7 +244,7 @@ function updateTimelineItem(id, status, duration) {
 function updateFindingsBadges() {
     for (const sev of ["critical", "high", "medium", "low", "info"]) {
         const el = document.getElementById("count-" + sev);
-        el.textContent = findings[sev] + " " + sev.charAt(0).toUpperCase() + sev.slice(1);
+        if (el) el.textContent = findings[sev] + " " + sev.charAt(0).toUpperCase() + sev.slice(1);
     }
 }
 
@@ -209,9 +257,28 @@ function addFindingEntry(f) {
         '<div class="finding-sev"><span class="sev-badge sev-' + sev + '">' + sev.toUpperCase() + '</span></div>' +
         '<div class="finding-detail">' + escapeHtml(f.template || f.extra || f.url || "Finding") + '</div>';
     list.insertBefore(entry, list.firstChild);
-    // Keep last 30
     while (list.children.length > 30) list.removeChild(list.lastChild);
 }
+
+
+// ---- Severity Filter ----
+
+function filterFindings(sev) {
+    activeFilter = sev;
+    // Update filter button states
+    document.querySelectorAll(".filter-btn").forEach(btn => {
+        btn.classList.toggle("active-filter", btn.dataset.sev === sev);
+    });
+    // Show/hide rows
+    const rows = document.querySelectorAll("#table-findings tbody tr");
+    rows.forEach(row => {
+        const badge = row.querySelector(".sev-badge");
+        if (!badge) return;
+        const rowSev = badge.textContent.toLowerCase();
+        row.style.display = (sev === "all" || rowSev === sev) ? "" : "none";
+    });
+}
+
 
 // ---- Table Functions ----
 
@@ -219,13 +286,18 @@ function addFindingRow(f) {
     const tbody = document.querySelector("#table-findings tbody");
     const row = document.createElement("tr");
     const sev = (f.severity || "info").toLowerCase();
+    row.setAttribute("data-sev", sev);
     row.innerHTML =
         '<td><span class="sev-badge sev-' + sev + '">' + sev.toUpperCase() + '</span></td>' +
-        '<td>' + escapeHtml(f.template || "") + '</td>' +
+        '<td title="' + escapeHtml(f.template || "") + '">' + escapeHtml(f.template || "") + '</td>' +
         '<td>' + escapeHtml(f.protocol || "") + '</td>' +
-        '<td>' + escapeHtml(f.url || "") + '</td>' +
-        '<td>' + escapeHtml(f.extra || "") + '</td>';
+        '<td title="' + escapeHtml(f.url || "") + '">' + escapeHtml(f.url || "") + '</td>' +
+        '<td title="' + escapeHtml(f.extra || "") + '">' + escapeHtml(f.extra || "") + '</td>';
     tbody.appendChild(row);
+    // Apply current filter
+    if (activeFilter !== "all" && sev !== activeFilter) {
+        row.style.display = "none";
+    }
 }
 
 function addPortRow(p) {
@@ -234,10 +306,10 @@ function addPortRow(p) {
     const stClass = p.state === "open" ? "status-open" : p.state === "filtered" ? "status-filtered" : "status-closed";
     row.innerHTML =
         '<td>' + p.port + '</td>' +
-        '<td>' + p.protocol + '</td>' +
-        '<td><span class="status-badge ' + stClass + '">' + p.state + '</span></td>' +
+        '<td>' + escapeHtml(p.protocol || "") + '</td>' +
+        '<td><span class="status-badge ' + stClass + '">' + escapeHtml(p.state || "") + '</span></td>' +
         '<td>' + escapeHtml(p.service || "") + '</td>' +
-        '<td>' + escapeHtml(p.version || "") + '</td>';
+        '<td title="' + escapeHtml(p.version || "") + '">' + escapeHtml(p.version || "") + '</td>';
     tbody.appendChild(row);
 }
 
@@ -247,12 +319,68 @@ function addFfufRow(r) {
     const st = r.status || 0;
     const httpClass = st >= 500 ? "http-5xx" : st >= 400 ? "http-4xx" : st >= 300 ? "http-3xx" : "http-2xx";
     row.innerHTML =
-        '<td>' + escapeHtml(r.url || "") + '</td>' +
+        '<td title="' + escapeHtml(r.url || "") + '">' + escapeHtml(r.url || "") + '</td>' +
         '<td><span class="http-status ' + httpClass + '">' + st + '</span></td>' +
         '<td>' + (r.size || 0) + '</td>' +
         '<td>' + (r.words || 0) + '</td>';
     tbody.appendChild(row);
 }
+
+
+// ---- CSV Export ----
+
+function _tableToCSV(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return "";
+    const rows = [];
+    const headers = Array.from(table.querySelectorAll("thead th")).map(th => '"' + th.textContent.trim() + '"');
+    rows.push(headers.join(","));
+    table.querySelectorAll("tbody tr").forEach(tr => {
+        if (tr.style.display === "none") return;
+        const cells = Array.from(tr.querySelectorAll("td")).map(td => {
+            // Get plain text, escape double-quotes
+            const text = (td.getAttribute("title") || td.textContent).trim().replace(/"/g, '""');
+            return '"' + text + '"';
+        });
+        rows.push(cells.join(","));
+    });
+    return rows.join("\n");
+}
+
+function _downloadCSV(csv, filename) {
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function exportFindingsCSV() {
+    const csv = _tableToCSV("table-findings");
+    if (!csv || csv.split("\n").length <= 1) {
+        toast("No findings to export", "info", 2000);
+        return;
+    }
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    _downloadCSV(csv, "phantom-findings-" + ts + ".csv");
+    toast("Findings exported as CSV", "success", 2500);
+}
+
+function exportPortsCSV() {
+    const csv = _tableToCSV("table-ports");
+    if (!csv || csv.split("\n").length <= 1) {
+        toast("No port data to export", "info", 2000);
+        return;
+    }
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    _downloadCSV(csv, "phantom-ports-" + ts + ".csv");
+    toast("Ports exported as CSV", "success", 2500);
+}
+
 
 // ---- Charts ----
 
@@ -281,6 +409,11 @@ function initCharts() {
                 maintainAspectRatio: true,
                 plugins: {
                     legend: { position: "right", labels: { boxWidth: 12 } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ctx.label + ": " + ctx.parsed + " findings",
+                        },
+                    },
                 },
             },
         });
@@ -314,14 +447,25 @@ function initCharts() {
                 labels: [],
                 datasets: [{
                     data: [],
-                    backgroundColor: ["#f85149", "#d2a8ff", "#58a6ff", "#7ee787", "#e3b341", "#79c0ff", "#d29b00", "#8b949e"],
+                    backgroundColor: [
+                        "#f85149", "#d2a8ff", "#58a6ff", "#7ee787",
+                        "#e3b341", "#79c0ff", "#d29b00", "#8b949e",
+                        "#a5d6ff", "#ffa657", "#3fb950", "#f0883e",
+                    ],
                     borderWidth: 0,
                 }],
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
-                plugins: { legend: { position: "right", labels: { boxWidth: 10, font: { size: 10 } } } },
+                plugins: {
+                    legend: { position: "right", labels: { boxWidth: 10, font: { size: 10 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ctx.label + ": " + ctx.parsed + "x",
+                        },
+                    },
+                },
             },
         });
     }
@@ -395,6 +539,7 @@ function updateFfufChart() {
     chartFfuf.update();
 }
 
+
 // ---- Mission Summary ----
 
 function showMissionSummary(data) {
@@ -405,10 +550,10 @@ function showMissionSummary(data) {
 
     let html = '<div class="summary-header">' +
         '<h2>MISSION COMPLETE</h2>' +
-        '<div class="summary-meta">' + (data.turns || currentTurn) + ' turns | ' + duration + ' | ' + totalFindings + ' findings</div>' +
+        '<div class="summary-meta">' + (data.turns || currentTurn) + ' turns &nbsp;|&nbsp; ' +
+        duration + ' &nbsp;|&nbsp; ' + totalFindings + ' findings</div>' +
         '</div>';
 
-    // Stat cards
     html += '<div class="summary-stats">';
     html += statCard(findings.critical, "Critical", "critical");
     html += statCard(findings.high, "High", "high");
@@ -418,13 +563,11 @@ function showMissionSummary(data) {
     html += statCard(duration, "Duration", "duration");
     html += '</div>';
 
-    // Summary charts
     html += '<div class="summary-charts">' +
         '<div class="summary-chart-card"><h3>Findings by Severity</h3><canvas id="summary-chart-sev"></canvas></div>' +
         '<div class="summary-chart-card"><h3>Tools Breakdown</h3><canvas id="summary-chart-tools"></canvas></div>' +
         '</div>';
 
-    // Summary text
     if (data.summary) {
         html += '<h3 style="color:var(--blue);font-size:12px;margin:12px 0 8px;text-transform:uppercase;letter-spacing:1px;">Agent Summary</h3>';
         html += '<div class="summary-text">' + escapeHtml(data.summary) + '</div>';
@@ -446,22 +589,31 @@ function showMissionSummary(data) {
                         borderWidth: 0,
                     }],
                 },
-                options: { responsive: true, plugins: { legend: { position: "right", labels: { boxWidth: 12 } } } },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { position: "right", labels: { boxWidth: 12 } } },
+                },
             });
         }
         const ctxTools = document.getElementById("summary-chart-tools");
-        if (ctxTools) {
+        if (ctxTools && Object.keys(toolsUsed).length > 0) {
             new Chart(ctxTools, {
                 type: "pie",
                 data: {
                     labels: Object.keys(toolsUsed),
                     datasets: [{
                         data: Object.values(toolsUsed),
-                        backgroundColor: ["#f85149", "#d2a8ff", "#58a6ff", "#7ee787", "#e3b341", "#79c0ff", "#d29b00", "#8b949e"],
+                        backgroundColor: [
+                            "#f85149", "#d2a8ff", "#58a6ff", "#7ee787",
+                            "#e3b341", "#79c0ff", "#d29b00", "#8b949e",
+                        ],
                         borderWidth: 0,
                     }],
                 },
-                options: { responsive: true, plugins: { legend: { position: "right", labels: { boxWidth: 10, font: { size: 10 } } } } },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { position: "right", labels: { boxWidth: 10, font: { size: 10 } } } },
+                },
             });
         }
     }, 100);
@@ -474,15 +626,22 @@ function statCard(value, label, cls) {
         '</div>';
 }
 
+
 // ---- Tabs ----
 
 function switchTab(el) {
-    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(t => {
+        t.classList.remove("active");
+        t.setAttribute("aria-selected", "false");
+    });
     document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
     el.classList.add("active");
+    el.setAttribute("aria-selected", "true");
     const target = el.dataset.tab || el.getAttribute("data-tab");
-    document.getElementById(target).classList.add("active");
+    const panel = document.getElementById(target);
+    if (panel) panel.classList.add("active");
 }
+
 
 // ---- Timer ----
 
@@ -501,26 +660,31 @@ function stopTimer() {
 
 function formatDuration(sec) {
     if (typeof sec !== "number") return String(sec);
-    const m = Math.floor(sec / 60);
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
     const s = Math.floor(sec % 60);
+    if (h > 0) return h + "h " + m + "m " + s + "s";
     if (m > 0) return m + "m " + s + "s";
     return s + "s";
 }
 
+
 // ---- Mission Control ----
 
 function startMission() {
-    const scope = document.getElementById("scope-input").value;
+    const scope = document.getElementById("scope-input").value.trim();
     if (!scope) {
         addTerminalLine("Please enter a target scope first.", "error");
+        toast("Enter a target scope before launching", "error", 3000);
+        document.getElementById("scope-input").focus();
         return;
     }
 
-    // Reset state
     resetState();
     document.getElementById("btn-launch").disabled = true;
     document.getElementById("btn-stop").disabled = false;
     startTimer();
+    setMissionProgress(true);
 
     addTerminalLine("Starting mission against: " + scope, "system");
 
@@ -532,16 +696,37 @@ function startMission() {
             provider: document.getElementById("provider-select").value,
         }),
     })
-    .then(r => r.json())
-    .then(data => {
-        if (data.error) addTerminalLine("Error: " + data.error, "error");
+    .then(r => {
+        if (!r.ok && r.status === 429) throw new Error("Rate limited — please wait.");
+        return r.json();
     })
-    .catch(err => addTerminalLine("Error: " + err, "error"));
+    .then(data => {
+        if (data.error) {
+            addTerminalLine("Error: " + data.error, "error");
+            toast(data.error, "error", 5000);
+            document.getElementById("btn-launch").disabled = false;
+            document.getElementById("btn-stop").disabled = true;
+            stopTimer();
+            setMissionProgress(false);
+        }
+    })
+    .catch(err => {
+        addTerminalLine("Error: " + err, "error");
+        toast(String(err), "error", 5000);
+        document.getElementById("btn-launch").disabled = false;
+        document.getElementById("btn-stop").disabled = true;
+        stopTimer();
+        setMissionProgress(false);
+    });
 }
 
 function stopMission() {
     fetch("/api/missions/stop", { method: "POST" })
-    .then(() => addTerminalLine("Stop requested...", "system"));
+    .then(() => {
+        addTerminalLine("Stop requested...", "system");
+        toast("Stop signal sent", "warning", 3000);
+    })
+    .catch(err => toast("Stop request failed: " + err, "error"));
 }
 
 function resetState() {
@@ -552,16 +737,22 @@ function resetState() {
     ffufData = [];
     toolTimeline = [];
     currentTurn = 0;
+    activeFilter = "all";
     updateFindingsBadges();
     document.getElementById("timeline-bar").innerHTML = "";
     document.getElementById("findings-list").innerHTML = "";
     document.getElementById("turn-badge").textContent = "Turn 0";
+    document.getElementById("mission-timer").textContent = "";
     document.querySelector("#table-findings tbody").innerHTML = "";
     document.querySelector("#table-ports tbody").innerHTML = "";
     document.querySelector("#table-ffuf tbody").innerHTML = "";
     document.getElementById("summary-panel").innerHTML =
         '<div class="summary-placeholder">Mission in progress...</div>';
     clearTerminal();
+    // Reset filter buttons
+    document.querySelectorAll(".filter-btn").forEach(b => {
+        b.classList.toggle("active-filter", b.dataset.sev === "all");
+    });
     // Reset charts
     if (chartSeverity) { chartSeverity.data.datasets[0].data = [0,0,0,0,0]; chartSeverity.update(); }
     if (chartPorts) { chartPorts.data.labels = []; chartPorts.data.datasets[0].data = []; chartPorts.update(); }
@@ -569,44 +760,58 @@ function resetState() {
     if (chartFfuf) { chartFfuf.data.labels = []; chartFfuf.data.datasets[0].data = []; chartFfuf.update(); }
 }
 
+
 // ---- Session Management ----
 
 function loadSessions() {
-    fetch("/api/sessions")
-    .then(r => r.json())
-    .then(sessions => {
+    fetch("/api/sessions?limit=50")
+    .then(r => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+    })
+    .then(data => {
+        // Support both paginated {sessions: [...]} and legacy flat array
+        const sessions = Array.isArray(data) ? data : (data.sessions || []);
         const list = document.getElementById("session-list");
         list.innerHTML = "";
+        if (!sessions.length) {
+            list.innerHTML = '<div style="color:var(--text-muted);font-size:11px;padding:6px">No sessions yet</div>';
+            return;
+        }
         sessions.forEach(s => {
             const item = document.createElement("div");
             item.className = "session-item";
+            item.setAttribute("role", "listitem");
+            item.setAttribute("tabindex", "0");
+            const badge = s.has_report ? '<span class="session-badge">Report</span>' : "";
             item.innerHTML =
-                '<div class="session-id">' + escapeHtml(s.label || s.id) + '</div>' +
-                '<div class="session-meta">' + s.file_count + ' files' + (s.has_report ? ' | Report' : '') + '</div>';
+                '<div class="session-id">' + escapeHtml(s.label || s.id) + badge + '</div>' +
+                '<div class="session-meta">' + s.file_count + ' files' + (s.has_state ? ' | Resumable' : '') + '</div>';
             item.onclick = function() { loadSession(s.id, this); };
+            item.onkeydown = function(e) { if (e.key === "Enter" || e.key === " ") loadSession(s.id, this); };
             list.appendChild(item);
         });
-    });
+    })
+    .catch(err => console.warn("loadSessions error:", err));
 }
 
 function loadSession(sessionId, el) {
-    // Highlight active
     document.querySelectorAll(".session-item").forEach(e => e.classList.remove("active"));
     if (el) el.classList.add("active");
 
-    // Fetch structured state data
-    fetch("/api/sessions/" + sessionId + "/state")
-    .then(r => r.json())
+    fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/state")
+    .then(r => {
+        if (!r.ok) throw new Error("state " + r.status);
+        return r.json();
+    })
     .then(data => {
         if (data.error) {
             addTerminalLine("No state data for this session.", "system");
             return;
         }
 
-        // Reset and populate
         resetState();
 
-        // Populate findings
         if (data.findings) {
             data.findings.forEach(f => {
                 const sev = (f.severity || "info").toLowerCase();
@@ -619,7 +824,6 @@ function loadSession(sessionId, el) {
             updateSeverityChart();
         }
 
-        // Populate nmap
         if (data.nmap) {
             data.nmap.forEach(scan => {
                 if (scan.ports) {
@@ -632,7 +836,6 @@ function loadSession(sessionId, el) {
             updatePortsChart();
         }
 
-        // Populate ffuf
         if (data.ffuf) {
             data.ffuf.forEach(r => {
                 ffufData.push(r);
@@ -641,7 +844,6 @@ function loadSession(sessionId, el) {
             updateFfufChart();
         }
 
-        // Populate tools
         if (data.tools_used) {
             data.tools_used.forEach(t => {
                 toolsUsed[t.name] = (toolsUsed[t.name] || 0) + 1;
@@ -649,9 +851,11 @@ function loadSession(sessionId, el) {
             updateToolsChart();
         }
 
-        // Populate terminal with last texts
         clearTerminal();
-        addTerminalLine("Session: " + sessionId + " | Turn " + data.turn + " | " + data.message_count + " messages", "system");
+        addTerminalLine(
+            "Session: " + sessionId + " | Turn " + data.turn + " | " + data.message_count + " messages",
+            "system"
+        );
         if (data.texts) {
             data.texts.forEach(t => addTerminalLine(t, "agent"));
         }
@@ -659,23 +863,22 @@ function loadSession(sessionId, el) {
         currentTurn = data.turn;
         document.getElementById("turn-badge").textContent = "Turn " + data.turn;
 
-        // Show summary for completed sessions
         const totalFindings = findings.critical + findings.high + findings.medium + findings.low + findings.info;
         const totalTools = Object.values(toolsUsed).reduce((a, b) => a + b, 0);
         showMissionSummary({
             turns: data.turn,
             duration: "N/A",
-            summary: "Session loaded from history. " + totalFindings + " findings, " + totalTools + " tool calls.",
+            summary: "Session loaded from history.\n" + totalFindings + " findings, " + totalTools + " tool calls.",
         });
 
-        // Switch to charts tab
         switchTab(document.querySelector('[data-tab="charts-tab"]'));
+        toast("Session " + sessionId + " loaded", "success", 2500);
     })
     .catch(() => {
         // Fallback: load log file
         clearTerminal();
         addTerminalLine("Loading session log...", "system");
-        fetch("/api/sessions/" + sessionId + "/logs/agent.log")
+        fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/logs/agent.log")
         .then(r => r.json())
         .then(log => {
             if (log.content) {
@@ -683,17 +886,53 @@ function loadSession(sessionId, el) {
                     addTerminalLine(line, "agent");
                 });
             }
-        });
+        })
+        .catch(() => addTerminalLine("Could not load session log.", "error"));
     });
 }
+
+
+// ---- Keyboard Shortcuts ----
+
+document.addEventListener("keydown", (e) => {
+    // Don't fire when user is typing in an input
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") {
+        return;
+    }
+
+    switch (e.key.toUpperCase()) {
+        case "R":
+            if (!e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                loadSessions();
+                toast("Sessions refreshed", "info", 1500);
+            }
+            break;
+        case "C":
+            if (!e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                clearTerminal();
+            }
+            break;
+        case "F":
+            if (!e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                document.getElementById("scope-input").focus();
+            }
+            break;
+    }
+});
+
 
 // ---- Helpers ----
 
 function escapeHtml(text) {
+    if (text == null) return "";
     const div = document.createElement("div");
-    div.textContent = text;
+    div.textContent = String(text);
     return div.innerHTML;
 }
+
 
 // ---- Init ----
 

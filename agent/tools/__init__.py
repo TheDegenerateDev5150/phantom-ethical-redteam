@@ -1,6 +1,10 @@
 """Tool registry with auto-discovery."""
 
+from __future__ import annotations
+
 import logging
+
+__all__ = ["register_tool", "ALL_TOOLS", "get_tool_mapping", "TOOL_REGISTRY", "TOOL_SPECS"]
 
 logger = logging.getLogger(__name__)
 

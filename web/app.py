@@ -1,5 +1,6 @@
 """Phantom Web Dashboard — Flask + SocketIO with structured data."""
 
+import collections
 import os
 import re
 import sys
@@ -49,6 +50,59 @@ from flask_socketio import SocketIO
 _cors_origin = os.environ.get("PHANTOM_CORS_ORIGIN", "http://localhost:*")
 CORS(app, origins=[_cors_origin])
 socketio = SocketIO(app, cors_allowed_origins=_cors_origin, async_mode="threading")
+
+
+# ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+
+@app.after_request
+def add_security_headers(response):
+    """Add HTTP security headers to every response."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "connect-src 'self' ws://localhost:* wss://localhost:*; "
+        "img-src 'self' data:; "
+        "font-src 'self';"
+    )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting (simple in-memory per-IP, no external deps)
+# ---------------------------------------------------------------------------
+
+_rate_store: dict = collections.defaultdict(list)
+_RATE_WINDOW = 60   # seconds
+_RATE_MAX = int(os.environ.get("PHANTOM_RATE_LIMIT", "120"))  # requests per window
+
+
+def _is_rate_limited(ip: str) -> bool:
+    """Return True if the given IP has exceeded the rate limit."""
+    now = time.time()
+    window_start = now - _RATE_WINDOW
+    calls = _rate_store[ip]
+    # Prune old entries
+    _rate_store[ip] = [t for t in calls if t > window_start]
+    if len(_rate_store[ip]) >= _RATE_MAX:
+        return True
+    _rate_store[ip].append(now)
+    return False
+
+
+@app.before_request
+def check_rate_limit():
+    """Apply rate limiting to all API endpoints."""
+    if request.path.startswith("/api/"):
+        ip = request.remote_addr or "unknown"
+        if _is_rate_limited(ip):
+            return jsonify({"error": "Rate limit exceeded. Try again later."}), 429
 
 # Track running mission
 _mission_thread = None
@@ -189,17 +243,42 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/health")
+def health():
+    """Health check endpoint for monitoring and load balancers."""
+    running = _mission_thread is not None and _mission_thread.is_alive()
+    return jsonify({
+        "status": "ok",
+        "mission_running": running,
+        "version": "2.0.0",
+    })
+
+
 @app.route("/api/sessions")
 @require_auth
 def list_sessions():
+    """List available sessions with optional pagination.
+
+    Query params:
+        page  (int, default 1): page number (1-based)
+        limit (int, default 50): max sessions per page
+    """
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+        limit = min(200, max(1, int(request.args.get("limit", 50))))
+    except (ValueError, TypeError):
+        page, limit = 1, 50
+
     sessions = []
     if LOGS_DIR.exists():
         for d in sorted(LOGS_DIR.iterdir(), reverse=True):
             if d.is_dir() and d.name != "temp":
+                # Skip hidden directories
+                if d.name.startswith("."):
+                    continue
                 files = [f.name for f in d.iterdir() if f.is_file()]
                 has_report = any("report" in f for f in files)
                 has_state = "state.json" in files
-                # Parse date from dirname
                 try:
                     dt = datetime.strptime(d.name[:15], "%Y%m%d_%H%M%S")
                     label = dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -208,18 +287,32 @@ def list_sessions():
                 sessions.append({
                     "id": d.name,
                     "label": label,
-                    "files": files,
                     "has_report": has_report,
                     "has_state": has_state,
                     "file_count": len(files),
                 })
-    return jsonify(sessions)
+
+    total = len(sessions)
+    start = (page - 1) * limit
+    paged = sessions[start: start + limit]
+    return jsonify({
+        "sessions": paged,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": max(1, (total + limit - 1) // limit),
+    })
 
 
 @app.route("/api/sessions/<session_id>")
 @require_auth
 def session_detail(session_id):
-    session_dir = LOGS_DIR / session_id
+    safe_session = os.path.basename(session_id)
+    if safe_session != session_id or ".." in session_id or session_id.startswith("/"):
+        return jsonify({"error": "Invalid session id"}), 400
+    session_dir = LOGS_DIR / safe_session
+    if not str(session_dir.resolve()).startswith(str(LOGS_DIR.resolve())):
+        return jsonify({"error": "Access denied"}), 403
     if not session_dir.is_dir():
         return jsonify({"error": "Session not found"}), 404
 
@@ -269,7 +362,14 @@ def read_log(session_id, filename):
 @require_auth
 def read_state(session_id):
     """Read and parse state.json for a past session — extract structured data."""
-    state_path = LOGS_DIR / session_id / "state.json"
+    # Path traversal protection — mirror read_log guard
+    safe_session = os.path.basename(session_id)
+    if safe_session != session_id or ".." in session_id or session_id.startswith("/"):
+        return jsonify({"error": "Invalid session id"}), 400
+    state_file = (LOGS_DIR / safe_session / "state.json").resolve()
+    if not str(state_file).startswith(str(LOGS_DIR.resolve())):
+        return jsonify({"error": "Access denied"}), 403
+    state_path = LOGS_DIR / safe_session / "state.json"
     if not state_path.exists():
         return jsonify({"error": "No state.json"}), 404
 
@@ -356,7 +456,12 @@ def read_state(session_id):
 @app.route("/api/sessions/<session_id>/report")
 @require_auth
 def get_report(session_id):
-    session_dir = LOGS_DIR / session_id
+    safe_session = os.path.basename(session_id)
+    if safe_session != session_id or ".." in session_id or session_id.startswith("/"):
+        return jsonify({"error": "Invalid session id"}), 400
+    session_dir = LOGS_DIR / safe_session
+    if not str(session_dir.resolve()).startswith(str(LOGS_DIR.resolve())):
+        return jsonify({"error": "Access denied"}), 403
     reports = sorted(session_dir.glob("report_*.html"), reverse=True)
     if not reports:
         return jsonify({"error": "No report found"}), 404
@@ -565,4 +670,5 @@ def on_connect():
 if __name__ == "__main__":
     host = os.environ.get("PHANTOM_DASHBOARD_HOST", "127.0.0.1")
     port = int(os.environ.get("PHANTOM_DASHBOARD_PORT", "5000"))
-    socketio.run(app, host=host, port=port, debug=True, allow_unsafe_werkzeug=True)
+    debug = os.environ.get("PHANTOM_DEBUG", "false").lower() == "true"
+    socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)

@@ -1,5 +1,7 @@
 """CVSS risk scoring utility for Phantom reports."""
 
+from __future__ import annotations
+
 from tools import register_tool
 
 SEVERITY_SCORES = {
@@ -46,7 +48,7 @@ TOOL_SPEC = {
 
 
 @register_tool(TOOL_SPEC)
-def run(findings: list = None, **kwargs) -> str:
+def run(findings: list | None = None, **kwargs) -> str:
     """Calculate aggregate risk score."""
     if not findings:
         return "No findings provided."
