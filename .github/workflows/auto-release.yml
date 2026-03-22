@@ -1,0 +1,83 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+
+# Skip if the commit was made by the bot (version bump)
+jobs:
+  release:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Read and bump version
+        id: version
+        run: |
+          CURRENT=$(cat VERSION | tr -d '[:space:]')
+          echo "Current version: $CURRENT"
+
+          MAJOR=$(echo $CURRENT | cut -d. -f1)
+          MINOR=$(echo $CURRENT | cut -d. -f2)
+          PATCH=$(echo $CURRENT | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+
+          echo "New version: $NEW_VERSION"
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update VERSION file
+        run: echo "${{ steps.version.outputs.new }}" > VERSION
+
+      - name: Update pyproject.toml
+        run: |
+          sed -i 's/^version = .*/version = "${{ steps.version.outputs.new }}"/' pyproject.toml
+
+      - name: Update version in main.py
+        run: |
+          sed -i 's/^VERSION = .*/VERSION = "${{ steps.version.outputs.new }}"/' agent/main.py
+
+      - name: Update version in README badge
+        run: |
+          NEW="${{ steps.version.outputs.new }}"
+          # Update version badge if present
+          sed -i "s|v[0-9]\+\.[0-9]\+\.[0-9]\+-blue|v${NEW}-blue|g" README.md || true
+
+      - name: Commit version bump
+        run: |
+          git add VERSION pyproject.toml agent/main.py README.md
+          git diff --staged --quiet || git commit -m "chore: bump version to v${{ steps.version.outputs.new }} [skip ci]"
+          git push
+
+      - name: Get commit message for release notes
+        id: commit
+        run: |
+          MSG=$(git log --format="%s" -n 2 | tail -1)
+          echo "message=$MSG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.new }}
+          name: v${{ steps.version.outputs.new }}
+          body: |
+            ## Changes
+            ${{ steps.commit.outputs.message }}
+
+            ---
+            *Auto-released from commit [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})*
+          generate_release_notes: true

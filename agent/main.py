@@ -11,6 +11,8 @@ import webbrowser
 import socket
 from pathlib import Path
 
+VERSION = "2.5.1"
+
 # Ensure agent/ is on sys.path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -163,7 +165,7 @@ interactive = config.get("interactive", True)
 mode_label = "AUTONOMOUS" if config.get("autonomous", False) else "INTERACTIVE"
 
 print("=" * 50)
-print("  Phantom -- Ethical RedTeam")
+print(f"  Phantom -- Ethical RedTeam  v{VERSION}")
 print(f"  Provider  : {provider.upper()}")
 print(f"  Model     : {config.get('model') or 'default'}")
 print(f"  Mode      : {mode_label}")
