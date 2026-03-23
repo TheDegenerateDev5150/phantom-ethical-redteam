@@ -103,6 +103,16 @@ Uses Nmap, Nuclei, sqlmap, ffuf, WhatWeb, advanced reconnaissance, screenshots, 
 
 ## Installation
 
+### Windows — One-liner (recommandé)
+
+```powershell
+irm https://kmdn-ch.github.io/phantom-ethical-redteam/get.ps1 | iex
+```
+
+Clone le repo dans `%USERPROFILE%\phantom` et lance l'installeur interactif. Met à jour automatiquement si déjà installé.
+
+---
+
 ### Linux
 
 ```bash
