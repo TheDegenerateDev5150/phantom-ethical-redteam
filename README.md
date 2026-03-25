@@ -107,13 +107,13 @@ Uses Nmap, Nuclei, sqlmap, ffuf, WhatWeb, advanced reconnaissance, screenshots, 
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://kmdn-ch.github.io/phantom-ethical-redteam/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kmdn-ch/phantom-ethical-redteam/main/get.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://kmdn-ch.github.io/phantom-ethical-redteam/get.ps1 | iex
+irm https://raw.githubusercontent.com/kmdn-ch/phantom-ethical-redteam/main/get.ps1 | iex
 ```
 
 Both one-liners clone the repo into `~/phantom` (or `%USERPROFILE%\phantom` on Windows) and launch the interactive installer. If Phantom is already installed, it updates to the latest version automatically.

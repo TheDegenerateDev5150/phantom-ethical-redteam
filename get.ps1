@@ -4,7 +4,7 @@
     Phantom - Ethical RedTeam -- One-line installer
 .DESCRIPTION
     Bootstrap script. Clones the repo and launches the interactive installer.
-    Usage: irm https://kmdn-ch.github.io/phantom-ethical-redteam/get.ps1 | iex
+    Usage: irm https://raw.githubusercontent.com/kmdn-ch/phantom-ethical-redteam/main/get.ps1 | iex
 #>
 
 $ErrorActionPreference = "Stop"

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Phantom – Ethical RedTeam — One-line installer
-# Usage: curl -fsSL https://kmdn-ch.github.io/phantom-ethical-redteam/get.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/kmdn-ch/phantom-ethical-redteam/main/get.sh | bash
 set -e
 
 REPO="https://github.com/kmdn-ch/phantom-ethical-redteam.git"
