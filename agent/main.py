@@ -204,8 +204,10 @@ scope_targets = [
 ]
 
 if args.v3:
-    # =========================================================    # V3 — PAOR autonomous reasoning engine
-    # =========================================================    from agent.orchestrator import Orchestrator
+    # =========================================================
+    # V3 — PAOR autonomous reasoning engine
+    # =========================================================
+    from agent.orchestrator import Orchestrator
     from agent.providers import get_provider
 
     logger.info("Starting Phantom v3 PAOR engine")
@@ -267,7 +269,8 @@ if args.v3:
     print("=" * 50)
 
 else:
-    # =========================================================    # V2 — Legacy linear loop
+    # =========================================================
+    # V2 — Legacy linear loop
     # =========================================================
     # --- Resume or fresh start ---
     turn = 0
